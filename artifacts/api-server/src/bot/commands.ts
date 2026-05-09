@@ -103,7 +103,7 @@ async function handleVipAdd(
 
   const roleId = vipRoles[type];
   if (!roleId) {
-    return interaction.editReply("Invalid VIP type.");
+    return interaction.editReply("Invalid VIP type (basic/silver/gold/platinum).");
   }
 
   const member = await guild.members.fetch(target.id).catch(() => null);
@@ -113,7 +113,7 @@ async function handleVipAdd(
 
   const role = guild.roles.cache.get(roleId);
   if (!role) {
-    return interaction.editReply("Role not found.");
+    return interaction.editReply("Role not found in server.");
   }
 
   const expiresAt = new Date(Date.now() + days * 24 * 60 * 60 * 1000);
@@ -141,51 +141,25 @@ async function handleVipAdd(
       },
     });
 
+  const vipChannelId = "1502463499878662305";
+  const channel = guild.channels.cache.get(vipChannelId);
+
   const embed = new EmbedBuilder()
     .setColor(vipColors[type])
-    .setTitle("VIP Granted")
-    .addFields(
-      { name: "User", value: `<@${target.id}>`, inline: true },
-      { name: "Tier", value: vipNames[type], inline: true },
-      { name: "Days", value: `${days}`, inline: true },
-      { name: "Expires", value: `<t:${Math.floor(expiresAt.getTime() / 1000)}:R>` },
+    .setTitle("💎 VIP Granted")
+    .setDescription(
+      `👤 User: <@${target.id}>\n` +
+      `🏷 Type: ${vipNames[type]}\n` +
+      `⏳ Duration: ${days} days\n` +
+      `📅 Expires: <t:${Math.floor(expiresAt.getTime() / 1000)}:R>`
     )
     .setTimestamp();
 
   await interaction.editReply({ embeds: [embed] });
 
-  /* ---------------- AUTO POST IN VIP CHANNEL ---------------- */
-
-  const vipChannelId = "1502463499878662305";
-  const channel = guild.channels.cache.get(vipChannelId);
-
-  if (channel) {
-    const post = new EmbedBuilder()
-      .setColor(vipColors[type])
-      .setTitle("💎 New VIP Member")
-      .setDescription(
-        `👤 User: <@${target.id}>\n` +
-        `🏷 Tier: **${vipNames[type]}**\n` +
-        `⏳ Duration: ${days} days\n` +
-        `📅 Expires: <t:${Math.floor(expiresAt.getTime() / 1000)}:R>`
-      )
-      .setTimestamp();
-
-    await (channel as any).send({ embeds: [post] });
+  if (channel && channel.isTextBased()) {
+    await channel.send({ embeds: [embed] });
   }
 
-  logger.info({ discordId: target.id, type, days }, "VIP granted");
-}
-
-/* ---------------- REST OF YOUR FILE (UNCHANGED) ---------------- */
-
-export async function handleInteraction(interaction: ChatInputCommandInteraction) {
-  if (!interaction.guildId) return;
-
-  const guild = discordClient.guilds.cache.get(GUILD_ID);
-  if (!guild) return;
-
-  if (interaction.commandName === "vip-add") {
-    return handleVipAdd(interaction, guild);
-  }
+  logger.info({ discordId: target.id, type }, "VIP granted");
 }
