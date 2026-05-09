@@ -15,6 +15,8 @@ import { discordClient } from "./client";
 const GUILD_ID = process.env.DISCORD_GUILD_ID!;
 const VIP_ROLE_NAME = process.env.VIP_ROLE_NAME ?? "VIP";
 
+/* ---------------- COMMANDS ---------------- */
+
 export const commands = [
   new SlashCommandBuilder()
     .setName("vip-add")
@@ -24,7 +26,8 @@ export const commands = [
       o.setName("user").setDescription("The member to grant VIP").setRequired(true),
     )
     .addStringOption((o) =>
-      o.setName("type")
+      o
+        .setName("type")
         .setDescription("VIP type: basic, silver, gold, platinum")
         .setRequired(true),
     )
@@ -32,7 +35,7 @@ export const commands = [
       o.setName("days").setDescription("How many days VIP lasts (default: 30)").setRequired(false),
     )
     .addStringOption((o) =>
-      o.setName("notes").setDescription("Optional notes about this VIP grant").setRequired(false),
+      o.setName("notes").setDescription("Optional notes").setRequired(false),
     ),
 
   new SlashCommandBuilder()
@@ -40,31 +43,31 @@ export const commands = [
     .setDescription("Remove VIP role from a member")
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageRoles)
     .addUserOption((o) =>
-      o.setName("user").setDescription("The member to remove VIP from").setRequired(true),
+      o.setName("user").setDescription("The member").setRequired(true),
     ),
 
   new SlashCommandBuilder()
     .setName("vip-list")
-    .setDescription("List all active VIP members")
+    .setDescription("List active VIP members")
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageRoles),
 
   new SlashCommandBuilder()
     .setName("vip-extend")
-    .setDescription("Extend an existing VIP member's expiry")
+    .setDescription("Extend VIP expiry")
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageRoles)
     .addUserOption((o) =>
-      o.setName("user").setDescription("The VIP member to extend").setRequired(true),
+      o.setName("user").setDescription("VIP member").setRequired(true),
     )
     .addIntegerOption((o) =>
-      o.setName("days").setDescription("How many additional days to add (default: 30)").setRequired(false),
+      o.setName("days").setDescription("Extra days").setRequired(false),
     ),
 
   new SlashCommandBuilder()
     .setName("vip-status")
-    .setDescription("Check your VIP status"),
+    .setDescription("Check VIP status"),
 ].map((c) => c.toJSON());
 
-/* ---------------- VIP ADD ---------------- */
+/* ---------------- VIP ADD (MODIFIED) ---------------- */
 
 async function handleVipAdd(
   interaction: ChatInputCommandInteraction,
@@ -92,10 +95,10 @@ async function handleVipAdd(
   };
 
   const vipColors: Record<string, any> = {
-    basic: 0xCD7F32,
-    silver: 0xC0C0C0,
-    gold: 0xFFD700,
-    platinum: 0xE5E4E2,
+    basic: 0xcd7f32,
+    silver: 0xc0c0c0,
+    gold: 0xffd700,
+    platinum: 0xe5e4e2,
   };
 
   const roleId = vipRoles[type];
@@ -142,33 +145,47 @@ async function handleVipAdd(
     .setColor(vipColors[type])
     .setTitle("VIP Granted")
     .addFields(
-      { name: "Member", value: `<@${target.id}>`, inline: true },
-      { name: "Type", value: vipNames[type], inline: true },
-      { name: "Duration", value: `${days} days`, inline: true },
-      { name: "Expires", value: `<t:${Math.floor(expiresAt.getTime() / 1000)}:R>`, inline: true },
+      { name: "User", value: `<@${target.id}>`, inline: true },
+      { name: "Tier", value: vipNames[type], inline: true },
+      { name: "Days", value: `${days}`, inline: true },
+      { name: "Expires", value: `<t:${Math.floor(expiresAt.getTime() / 1000)}:R>` },
     )
     .setTimestamp();
 
   await interaction.editReply({ embeds: [embed] });
 
-  // 🔥 VIP CHANNEL POST
+  /* ---------------- AUTO POST IN VIP CHANNEL ---------------- */
+
   const vipChannelId = "1502463499878662305";
   const channel = guild.channels.cache.get(vipChannelId);
 
   if (channel) {
-    const embed2 = new EmbedBuilder()
+    const post = new EmbedBuilder()
       .setColor(vipColors[type])
       .setTitle("💎 New VIP Member")
       .setDescription(
         `👤 User: <@${target.id}>\n` +
-        `⭐ Tier: ${vipNames[type]}\n` +
+        `🏷 Tier: **${vipNames[type]}**\n` +
         `⏳ Duration: ${days} days\n` +
         `📅 Expires: <t:${Math.floor(expiresAt.getTime() / 1000)}:R>`
       )
       .setTimestamp();
 
-    await (channel as any).send({ embeds: [embed2] });
+    await (channel as any).send({ embeds: [post] });
   }
 
-  logger.info({ discordId: target.id, days, type }, "VIP granted");
+  logger.info({ discordId: target.id, type, days }, "VIP granted");
+}
+
+/* ---------------- REST OF YOUR FILE (UNCHANGED) ---------------- */
+
+export async function handleInteraction(interaction: ChatInputCommandInteraction) {
+  if (!interaction.guildId) return;
+
+  const guild = discordClient.guilds.cache.get(GUILD_ID);
+  if (!guild) return;
+
+  if (interaction.commandName === "vip-add") {
+    return handleVipAdd(interaction, guild);
+  }
 }
