@@ -8,7 +8,7 @@ import {
   PermissionFlagsBits,
 } from "discord.js";
 import { db, vipMembersTable } from "@workspace/db";
-import { eq, and, lte, sql } from "drizzle-orm";
+import { eq, and, lte, sql, gt } from "drizzle-orm";
 import { logger } from "../lib/logger";
 import { discordClient } from "./client";
 
@@ -42,6 +42,17 @@ export const commands = [
     .setName("vip-list")
     .setDescription("List all active VIP members")
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageRoles),
+
+  new SlashCommandBuilder()
+    .setName("vip-extend")
+    .setDescription("Extend an existing VIP member's expiry")
+    .setDefaultMemberPermissions(PermissionFlagsBits.ManageRoles)
+    .addUserOption((o) =>
+      o.setName("user").setDescription("The VIP member to extend").setRequired(true),
+    )
+    .addIntegerOption((o) =>
+      o.setName("days").setDescription("How many additional days to add (default: 30)").setRequired(false),
+    ),
 
   new SlashCommandBuilder()
     .setName("vip-status")
@@ -94,6 +105,8 @@ export async function handleInteraction(interaction: ChatInputCommandInteraction
     await handleVipAdd(interaction, guild);
   } else if (interaction.commandName === "vip-remove") {
     await handleVipRemove(interaction, guild);
+  } else if (interaction.commandName === "vip-extend") {
+    await handleVipExtend(interaction, guild);
   } else if (interaction.commandName === "vip-list") {
     await handleVipList(interaction);
   } else if (interaction.commandName === "vip-status") {
@@ -180,6 +193,66 @@ async function handleVipRemove(
 
   await interaction.editReply({ content: `VIP removed from <@${target.id}>.` });
   logger.info({ discordId: target.id }, "VIP removed");
+}
+
+async function handleVipExtend(
+  interaction: ChatInputCommandInteraction,
+  guild: NonNullable<ReturnType<typeof discordClient.guilds.cache.get>>,
+) {
+  await interaction.deferReply({ ephemeral: true });
+
+  const target = interaction.options.getUser("user", true);
+  const days = interaction.options.getInteger("days") ?? 30;
+
+  const [existing] = await db
+    .select()
+    .from(vipMembersTable)
+    .where(
+      and(
+        eq(vipMembersTable.discordId, target.id),
+        eq(vipMembersTable.active, true),
+      ),
+    )
+    .limit(1);
+
+  if (!existing) {
+    await interaction.editReply(
+      `<@${target.id}> doesn't have an active VIP. Use \`/vip-add\` to grant VIP first.`,
+    );
+    return;
+  }
+
+  const currentExpiry = new Date(existing.expiresAt);
+  const baseDate = currentExpiry > new Date() ? currentExpiry : new Date();
+  const newExpiry = new Date(baseDate.getTime() + days * 24 * 60 * 60 * 1000);
+
+  await db
+    .update(vipMembersTable)
+    .set({ expiresAt: newExpiry })
+    .where(eq(vipMembersTable.discordId, target.id));
+
+  const role = await getOrCreateVipRole(guild);
+  const member = await guild.members.fetch(target.id).catch(() => null);
+  if (member && !member.roles.cache.has(role.id)) {
+    await member.roles.add(role, `VIP extended by ${interaction.user.tag}`);
+  }
+
+  const oldTs = Math.floor(currentExpiry.getTime() / 1000);
+  const newTs = Math.floor(newExpiry.getTime() / 1000);
+
+  const embed = new EmbedBuilder()
+    .setColor("Gold")
+    .setTitle("VIP Extended")
+    .addFields(
+      { name: "Member", value: `<@${target.id}>`, inline: true },
+      { name: "Added", value: `${days} days`, inline: true },
+      { name: "Was", value: `<t:${oldTs}:R>`, inline: true },
+      { name: "Now Expires", value: `<t:${newTs}:f>`, inline: true },
+    )
+    .setTimestamp();
+
+  await interaction.editReply({ embeds: [embed] });
+  logger.info({ discordId: target.id, days, newExpiry }, "VIP extended");
 }
 
 async function handleVipList(interaction: ChatInputCommandInteraction) {
