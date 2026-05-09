@@ -99,117 +99,142 @@ async function handleVipAdd(
 ) {
   await interaction.deferReply({ ephemeral: true });
 
-  const target = interaction.options.getUser("user", true);
-  const type = interaction.options.getString("type", true);
-  const days = interaction.options.getInteger("days") ?? 30;
-  const notes = interaction.options.getString("notes") ?? "";
+  try {
+    const target = interaction.options.getUser("user", true);
+    const type = interaction.options.getString("type", true);
+    const days = interaction.options.getInteger("days") ?? 30;
+    const notes = interaction.options.getString("notes") ?? "";
 
-  const vipRoles: Record<string, string> = {
-    basic: "1500505039289057401",
-    silver: "1500505143819632701",
-    gold: "1500505217987510354",
-    platinum: "1500505307661467718",
-  };
+    const vipRoles: Record<string, string> = {
+      basic: "1500505039289057401",
+      silver: "1500505143819632701",
+      gold: "1500505217987510354",
+      platinum: "1500505307661467718",
+    };
 
-  const vipNames: Record<string, string> = {
-    basic: "VIP BASIC",
-    silver: "VIP SILVER",
-    gold: "VIP GOLD",
-    platinum: "VIP PLATINUM",
-  };
+    const vipNames: Record<string, string> = {
+      basic: "VIP BASIC",
+      silver: "VIP SILVER",
+      gold: "VIP GOLD",
+      platinum: "VIP PLATINUM",
+    };
 
-  const vipColors: Record<string, number> = {
-    basic: 0xcd7f32,
-    silver: 0xc0c0c0,
-    gold: 0xffd700,
-    platinum: 0xe5e4e2,
-  };
+    const vipColors: Record<string, number> = {
+      basic: 0xcd7f32,
+      silver: 0xc0c0c0,
+      gold: 0xffd700,
+      platinum: 0xe5e4e2,
+    };
 
-  const roleId = vipRoles[type];
+    const roleId = vipRoles[type];
 
-  if (!roleId) {
-    return interaction.editReply("Invalid VIP type.");
-  }
+    if (!roleId) {
+      return interaction.editReply("Invalid VIP type.");
+    }
 
-  const member = await guild.members
-    .fetch(target.id)
-    .catch(() => null);
+    const member = await guild.members
+      .fetch(target.id)
+      .catch(() => null);
 
-  if (!member) {
-    return interaction.editReply("Member not found.");
-  }
+    if (!member) {
+      return interaction.editReply("Member not found.");
+    }
 
-  const role = guild.roles.cache.get(roleId);
+    const role = guild.roles.cache.get(roleId);
 
-  if (!role) {
-    return interaction.editReply("Role not found.");
-  }
+    if (!role) {
+      return interaction.editReply("Role not found.");
+    }
 
-  const expiresAt = new Date(
-    Date.now() + days * 24 * 60 * 60 * 1000,
-  );
+    const expiresAt = new Date(
+      Date.now() + days * 24 * 60 * 60 * 1000,
+    );
 
-  await member.roles.add(role);
+    /* ROLE */
 
-  await db.insert(vipMembersTable).values({
-    discordId: target.id,
-    username: target.tag,
-    roleId,
-    expiresAt,
-    notes,
-  });
+    await member.roles.add(role);
 
-  const embed = new EmbedBuilder()
-    .setColor(vipColors[type])
-    .setTitle("💎 VIP Granted")
-    .setDescription(
-      `👤 User: <@${target.id}>\n` +
-        `🏷 Type: ${vipNames[type]}\n` +
-        `⏳ Duration: ${days} days\n` +
-        `📅 Expires: <t:${Math.floor(
-          expiresAt.getTime() / 1000,
-        )}:R>\n` +
-        `📝 Notes: ${notes || "None"}`
-    )
-    .setTimestamp();
+    /* DATABASE */
 
-  await interaction.editReply({
-    embeds: [embed],
-  });
+    try {
+      await db.insert(vipMembersTable).values({
+        discordId: target.id,
+        username: target.tag,
+        roleId,
+        expiresAt,
+        notes,
+      });
+    } catch (err) {
+      logger.error({ err }, "Database insert failed");
+    }
 
-  /* ---------------- VIP MEMBERS CHANNEL ---------------- */
+    /* PRIVATE RESPONSE */
 
-  const vipChannelId = "1502463499878662305";
-
-  const channel = guild.channels.cache.get(vipChannelId);
-
-  if (channel && channel.isTextBased()) {
-    const publicEmbed = new EmbedBuilder()
+    const embed = new EmbedBuilder()
       .setColor(vipColors[type])
-      .setTitle("💎 New VIP Member")
+      .setTitle("💎 VIP Granted")
       .setDescription(
         `👤 User: <@${target.id}>\n` +
-          `🏷 Tier: ${vipNames[type]}\n` +
+          `🏷 Type: ${vipNames[type]}\n` +
           `⏳ Duration: ${days} days\n` +
           `📅 Expires: <t:${Math.floor(
             expiresAt.getTime() / 1000,
-          )}:R>`
+          )}:R>\n` +
+          `📝 Notes: ${notes || "None"}`
       )
       .setTimestamp();
 
-    await channel.send({
-      embeds: [publicEmbed],
+    await interaction.editReply({
+      embeds: [embed],
     });
-  }
 
-  logger.info(
-    {
-      discordId: target.id,
-      type,
-      days,
-    },
-    "VIP granted",
-  );
+    /* VIP CHANNEL */
+
+    const vipChannelId = "1502463499878662305";
+
+    const channel = guild.channels.cache.get(vipChannelId);
+
+    if (channel && channel.isTextBased()) {
+      const publicEmbed = new EmbedBuilder()
+        .setColor(vipColors[type])
+        .setTitle("💎 New VIP Member")
+        .setDescription(
+          `👤 User: <@${target.id}>\n` +
+            `🏷 Tier: ${vipNames[type]}\n` +
+            `⏳ Duration: ${days} days\n` +
+            `📅 Expires: <t:${Math.floor(
+              expiresAt.getTime() / 1000,
+            )}:R>`
+        )
+        .setTimestamp();
+
+      try {
+        await channel.send({
+          embeds: [publicEmbed],
+        });
+      } catch (err) {
+        logger.error(
+          { err },
+          "VIP channel message failed",
+        );
+      }
+    }
+
+    logger.info(
+      {
+        discordId: target.id,
+        type,
+        days,
+      },
+      "VIP granted",
+    );
+  } catch (err) {
+    logger.error({ err }, "VIP ADD FAILED");
+
+    return interaction.editReply(
+      "VIP granted but something failed internally.",
+    );
+  }
 }
 
 /* ---------------- EXPIRE SYSTEM ---------------- */
