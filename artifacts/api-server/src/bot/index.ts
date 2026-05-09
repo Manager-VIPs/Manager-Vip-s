@@ -1,12 +1,13 @@
 import { Events } from "discord.js";
 import { discordClient } from "./client";
-import { registerCommands, handleInteraction, expireVipMembers } from "./commands";
+import { handleInteraction, expireVipMembers } from "./commands";
 import { logger } from "../lib/logger";
 
 const CHECK_INTERVAL_MS = 60 * 1000;
 
 export async function startBot() {
   const token = process.env.DISCORD_BOT_TOKEN;
+
   if (!token) {
     logger.error("DISCORD_BOT_TOKEN is not set — bot will not start");
     return;
@@ -14,9 +15,13 @@ export async function startBot() {
 
   discordClient.once(Events.ClientReady, async (client) => {
     logger.info({ tag: client.user.tag }, "Discord bot ready");
+
+    // 🔥 IMPORTANT: commands registration happens HERE (safe place)
+    const { registerCommands } = await import("./commands");
     await registerCommands();
 
     await expireVipMembers();
+
     setInterval(async () => {
       await expireVipMembers();
     }, CHECK_INTERVAL_MS);
@@ -24,10 +29,12 @@ export async function startBot() {
 
   discordClient.on(Events.InteractionCreate, async (interaction) => {
     if (!interaction.isChatInputCommand()) return;
+
     try {
       await handleInteraction(interaction);
     } catch (err) {
       logger.error({ err }, "Error handling interaction");
+
       if (interaction.deferred || interaction.replied) {
         await interaction.editReply("An error occurred. Please try again.").catch(() => null);
       } else {
