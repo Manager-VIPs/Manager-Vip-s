@@ -13,7 +13,7 @@ import { discordClient } from "./client";
 
 const GUILD_ID = process.env.DISCORD_GUILD_ID!;
 const TOKEN = process.env.DISCORD_BOT_TOKEN!;
-const CLIENT_ID = discordClient.user?.id!;
+const CLIENT_ID = process.env.DISCORD_CLIENT_ID || discordClient.user?.id!;
 
 /* ---------------- COMMANDS ---------------- */
 
@@ -26,36 +26,34 @@ export const commands = [
       o.setName("user").setDescription("Member").setRequired(true),
     )
     .addStringOption((o) =>
-      o.setName("type")
-        .setDescription("basic, silver, gold, platinum")
-        .setRequired(true),
+      o.setName("type").setDescription("basic/silver/gold/platinum").setRequired(true),
     )
     .addIntegerOption((o) =>
-      o.setName("days").setDescription("Days").setRequired(false),
+      o.setName("days").setDescription("Duration in days").setRequired(false),
     )
     .addStringOption((o) =>
-      o.setName("notes").setDescription("Notes").setRequired(false),
+      o.setName("notes").setDescription("Optional notes").setRequired(false),
     ),
 
   new SlashCommandBuilder()
     .setName("vip-remove")
-    .setDescription("Remove VIP")
+    .setDescription("Remove VIP role")
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageRoles)
     .addUserOption((o) =>
-      o.setName("user").setRequired(true),
+      o.setName("user").setDescription("Member").setRequired(true),
     ),
 
   new SlashCommandBuilder()
     .setName("vip-list")
-    .setDescription("VIP list")
+    .setDescription("List VIP members")
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageRoles),
 
   new SlashCommandBuilder()
     .setName("vip-status")
-    .setDescription("Check VIP"),
+    .setDescription("Check VIP status"),
 ].map((c) => c.toJSON());
 
-/* ---------------- REGISTER COMMANDS ---------------- */
+/* ---------------- REGISTER ---------------- */
 
 export async function registerCommands() {
   const rest = new REST({ version: "10" }).setToken(TOKEN);
@@ -67,13 +65,15 @@ export async function registerCommands() {
   logger.info("Slash commands registered");
 }
 
-/* ---------------- HANDLE INTERACTION ---------------- */
+/* ---------------- HANDLER ---------------- */
 
 export async function handleInteraction(interaction: ChatInputCommandInteraction) {
   const guild = interaction.guild;
   if (!guild) return;
 
-  if (interaction.commandName === "vip-add") return handleVipAdd(interaction, guild);
+  if (interaction.commandName === "vip-add") {
+    return handleVipAdd(interaction, guild);
+  }
 }
 
 /* ---------------- VIP ADD ---------------- */
@@ -137,6 +137,7 @@ export async function expireVipMembers() {
 
   for (const vip of expired) {
     const member = await guild.members.fetch(vip.discordId).catch(() => null);
+
     if (member) {
       await member.roles.remove(vip.roleId).catch(() => {});
     }
