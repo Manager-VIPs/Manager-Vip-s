@@ -3,20 +3,24 @@ import {
   ChatInputCommandInteraction,
   EmbedBuilder,
   PermissionFlagsBits,
+  REST,
+  Routes,
 } from "discord.js";
 import { db, vipMembersTable } from "@workspace/db";
-import { sql } from "drizzle-orm";
+import { sql, eq, and, lte } from "drizzle-orm";
 import { logger } from "../lib/logger";
 import { discordClient } from "./client";
 
 const GUILD_ID = process.env.DISCORD_GUILD_ID!;
+const TOKEN = process.env.DISCORD_BOT_TOKEN!;
+const CLIENT_ID = discordClient.user?.id!;
 
 /* ---------------- COMMANDS ---------------- */
 
 export const commands = [
   new SlashCommandBuilder()
     .setName("vip-add")
-    .setDescription("Grant VIP role to a member")
+    .setDescription("Grant VIP role")
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageRoles)
     .addUserOption((o) =>
       o.setName("user").setDescription("Member").setRequired(true),
@@ -27,10 +31,10 @@ export const commands = [
         .setRequired(true),
     )
     .addIntegerOption((o) =>
-      o.setName("days").setDescription("Duration in days").setRequired(false),
+      o.setName("days").setDescription("Days").setRequired(false),
     )
     .addStringOption((o) =>
-      o.setName("notes").setDescription("Optional notes").setRequired(false),
+      o.setName("notes").setDescription("Notes").setRequired(false),
     ),
 
   new SlashCommandBuilder()
@@ -38,39 +42,49 @@ export const commands = [
     .setDescription("Remove VIP")
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageRoles)
     .addUserOption((o) =>
-      o.setName("user").setDescription("Member").setRequired(true),
+      o.setName("user").setRequired(true),
     ),
 
   new SlashCommandBuilder()
     .setName("vip-list")
-    .setDescription("List VIP members")
+    .setDescription("VIP list")
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageRoles),
 
   new SlashCommandBuilder()
-    .setName("vip-extend")
-    .setDescription("Extend VIP")
-    .setDefaultMemberPermissions(PermissionFlagsBits.ManageRoles)
-    .addUserOption((o) =>
-      o.setName("user").setDescription("Member").setRequired(true),
-    ),
-
-  new SlashCommandBuilder()
     .setName("vip-status")
-    .setDescription("Check VIP status"),
+    .setDescription("Check VIP"),
 ].map((c) => c.toJSON());
+
+/* ---------------- REGISTER COMMANDS ---------------- */
+
+export async function registerCommands() {
+  const rest = new REST({ version: "10" }).setToken(TOKEN);
+
+  await rest.put(Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID), {
+    body: commands,
+  });
+
+  logger.info("Slash commands registered");
+}
+
+/* ---------------- HANDLE INTERACTION ---------------- */
+
+export async function handleInteraction(interaction: ChatInputCommandInteraction) {
+  const guild = interaction.guild;
+  if (!guild) return;
+
+  if (interaction.commandName === "vip-add") return handleVipAdd(interaction, guild);
+}
 
 /* ---------------- VIP ADD ---------------- */
 
-async function handleVipAdd(
-  interaction: ChatInputCommandInteraction,
-  guild: any,
-) {
+async function handleVipAdd(interaction: ChatInputCommandInteraction, guild: any) {
   await interaction.deferReply({ ephemeral: true });
 
   const target = interaction.options.getUser("user", true);
   const type = interaction.options.getString("type", true);
   const days = interaction.options.getInteger("days") ?? 30;
-  const notes = interaction.options.getString("notes") ?? "No notes";
+  const notes = interaction.options.getString("notes") ?? "";
 
   const vipRoles: Record<string, string> = {
     basic: "1500505039289057401",
@@ -79,32 +93,15 @@ async function handleVipAdd(
     platinum: "1500505307661467718",
   };
 
-  const vipNames: Record<string, string> = {
-    basic: "VIP BASIC",
-    silver: "VIP SILVER",
-    gold: "VIP GOLD",
-    platinum: "VIP PLATINUM",
-  };
-
-  const vipColors: Record<string, number> = {
-    basic: 0xcd7f32,
-    silver: 0xc0c0c0,
-    gold: 0xffd700,
-    platinum: 0xe5e4e2,
-  };
-
   const roleId = vipRoles[type];
   if (!roleId) return interaction.editReply("Invalid VIP type.");
 
   const member = await guild.members.fetch(target.id).catch(() => null);
   if (!member) return interaction.editReply("Member not found.");
 
-  const role = guild.roles.cache.get(roleId);
-  if (!role) return interaction.editReply("Role not found.");
-
   const expiresAt = new Date(Date.now() + days * 86400000);
 
-  await member.roles.add(role);
+  await member.roles.add(roleId);
 
   await db.insert(vipMembersTable).values({
     discordId: target.id,
@@ -115,38 +112,40 @@ async function handleVipAdd(
   });
 
   const embed = new EmbedBuilder()
-    .setColor(vipColors[type])
-    .setTitle("💎 VIP GRANTED")
+    .setTitle("💎 VIP Granted")
     .setDescription(
-      `👤 **User:** <@${target.id}>\n` +
-      `🏷 **Type:** ${vipNames[type]}\n` +
-      `⏳ **Duration:** ${days} days\n` +
-      `📅 **Expires:** <t:${Math.floor(expiresAt.getTime() / 1000)}:R>\n` +
-      `📝 **Notes:** ${notes}`
+      `User: <@${target.id}>\nType: ${type}\nExpires: <t:${Math.floor(
+        expiresAt.getTime() / 1000,
+      )}:R>`,
     )
+    .setColor(0xffd700)
     .setTimestamp();
 
   await interaction.editReply({ embeds: [embed] });
+}
 
-  /* ---------------- VIP CHANNEL POST ---------------- */
+/* ---------------- EXPIRE SYSTEM ---------------- */
 
-  const vipChannelId = "1502463499878662305";
-  const channel = guild.channels.cache.get(vipChannelId);
+export async function expireVipMembers() {
+  const guild = discordClient.guilds.cache.get(GUILD_ID);
+  if (!guild) return;
 
-  if (channel && channel.isTextBased()) {
-    const logEmbed = new EmbedBuilder()
-      .setColor(vipColors[type])
-      .setTitle("💎 New VIP Member")
-      .setDescription(
-        `👤 User: <@${target.id}>\n` +
-        `🏷 Type: ${vipNames[type]}\n` +
-        `⏳ Duration: ${days} days\n` +
-        `📅 Expires: <t:${Math.floor(expiresAt.getTime() / 1000)}:R>`
-      )
-      .setTimestamp();
+  const expired = await db
+    .select()
+    .from(vipMembersTable)
+    .where(and(eq(vipMembersTable.active, true), lte(vipMembersTable.expiresAt, new Date())));
 
-    await channel.send({ embeds: [logEmbed] });
+  for (const vip of expired) {
+    const member = await guild.members.fetch(vip.discordId).catch(() => null);
+    if (member) {
+      await member.roles.remove(vip.roleId).catch(() => {});
+    }
+
+    await db
+      .update(vipMembersTable)
+      .set({ active: false })
+      .where(eq(vipMembersTable.discordId, vip.discordId));
+
+    logger.info({ discordId: vip.discordId }, "VIP expired");
   }
-
-  logger.info({ discordId: target.id, type }, "VIP granted");
 }
