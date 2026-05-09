@@ -1,6 +1,6 @@
 import app from "./app";
 import { logger } from "./lib/logger";
-import { startBot, registerCommands } from "./bot";
+import { startBot } from "./bot";
 
 const rawPort = process.env.PORT;
 
@@ -25,19 +25,15 @@ app.listen(port, (err) => {
   logger.info({ port }, "Server listening");
 });
 
-/* ---------------- DISCORD BOT ---------------- */
+/* ---------------- BOT START ---------------- */
 
-async function bootstrapBot() {
+async function bootstrap() {
   try {
     await startBot();
-    logger.info("Discord bot started");
-
-    // 🔥 FIX IMPORTANT: register slash commands AFTER bot is ready
-    await registerCommands();
-    logger.info("Slash commands registered");
+    logger.info("Discord bot started successfully");
   } catch (err) {
     logger.error({ err }, "Failed to start Discord bot");
   }
 }
 
-bootstrapBot();
+bootstrap();
