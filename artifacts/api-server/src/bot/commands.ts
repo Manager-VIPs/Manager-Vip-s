@@ -19,25 +19,33 @@ const VIP_ROLE_NAME = process.env.VIP_ROLE_NAME ?? "VIP";
 
 export const commands = [
   new SlashCommandBuilder()
-    .setName("vip-add")
-    .setDescription("Grant VIP role to a member")
-    .setDefaultMemberPermissions(PermissionFlagsBits.ManageRoles)
-    .addUserOption((o) =>
-      o.setName("user").setDescription("The member to grant VIP").setRequired(true),
-    )
-    .addStringOption((o) =>
-      o
-        .setName("type")
-        .setDescription("VIP type: basic, silver, gold, platinum")
-        .setRequired(true),
-    )
-    .addIntegerOption((o) =>
-      o.setName("days").setDescription("How many days VIP lasts (default: 30)").setRequired(false),
-    )
-    .addStringOption((o) =>
-      o.setName("notes").setDescription("Optional notes").setRequired(false),
-    ),
+  .setName("vip-add")
+  .setDescription("Grant VIP role to a member")
+  .setDefaultMemberPermissions(PermissionFlagsBits.ManageRoles)
 
+  .addUserOption((o) =>
+    o.setName("user")
+      .setDescription("The member to grant VIP")
+      .setRequired(true),
+  )
+
+  .addStringOption((o) =>
+    o.setName("type")
+      .setDescription("VIP type: basic, silver, gold, platinum")
+      .setRequired(true),
+  )
+
+  .addIntegerOption((o) =>
+    o.setName("days")
+      .setDescription("How many days VIP lasts (default: 30)")
+      .setRequired(false),
+  )
+
+  .addStringOption((o) =>
+    o.setName("notes")
+      .setDescription("Optional notes about this VIP grant")
+      .setRequired(false),
+  )
   new SlashCommandBuilder()
     .setName("vip-remove")
     .setDescription("Remove VIP role from a member")
